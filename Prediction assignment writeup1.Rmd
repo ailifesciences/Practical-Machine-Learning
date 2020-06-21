@@ -1,0 +1,156 @@
+---
+title: "Prediction assignment writeup"
+author: "S De Majumdar"
+date: "19/06/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Overview
+This document is the report of the Prediction Assignment Writeup from Coursera’s Practical Machine Learning course. The goal of the project is to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants to predict the manner in which they did the exercise. This is the "classe" variable in the training set. The prediction model built here is applied to the 20 test cases in the dataset. 
+
+## Background
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+## Dataset preparation
+### a) Data source
+The training data for this project are available here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+### b) Loading libraries and dataset
+```{r, loading libraries, echo=FALSE}
+library(caret)
+library(rpart)
+library(e1071)
+library(randomForest)
+```
+
+```{r, loading data, echo=TRUE}
+set.seed(1234)
+
+TrainDataURL <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+TrainData <- read.csv(url(TrainDataURL), na.strings=c("NA","#DIV/0!",""))
+
+TestDataURL <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+TestData <- read.csv(url(TestDataURL), na.strings=c("NA","#DIV/0!",""))
+
+# Checking data dimensions
+dim(TrainData)
+```
+```{r}
+dim(TestData)
+```
+
+### c) Cleaning and partioning dataset
+```{r, removing NA from data,echo=TRUE}
+TrainData <-TrainData[,colSums(is.na(TrainData)) == 0]
+TestData <-TestData[,colSums(is.na(TestData)) == 0]
+
+# Deleting unused columns i.e identification columns
+TrainData <-TrainData[,-c(1:7)]
+TestData <-TestData[,-c(1:7)]
+
+# Checking dimensions of the dataset
+dim(TrainData)
+```
+```{r}
+dim(TestData)
+```
+```{r, partioning data, echo=TRUE}
+
+inTrain <- createDataPartition(TrainData$classe, p=0.7, list=FALSE)
+TrainSet <- TrainData[inTrain, ]
+TestSet <- TrainData[-inTrain, ]
+dim(TrainSet)
+
+```
+```{r}
+
+dim(TestSet)
+```
+
+## Exploratory data analysis
+```{r, plot exploratory data, echo=TRUE}
+
+plot(TrainSet$classe, col="grey", main="Frequency of different classe", xlab="Classe", ylab="Frequency")
+
+```
+
+The frequency of classe A is the most frequent and that of classe D is least frequent. The dataplot also shows that the frequency magnitude order is within range of each other.
+
+## Building the prediction model
+Different methods are applied to model the regressions (in the Train dataset) and the best one (with higher accuracy when applied to the Test dataset) is chosen for predicting the test samples. The methods are: Linear Discriminant Analysis (LDA), K-nearest neighbours, Random Forests, Decision Tree and Generalized Boosted Model. A Confusion Matrix is plotted at the end of each analysis to better visualize the accuracy of the models.
+
+```{r, echo=TRUE}
+
+control <- trainControl(method="cv", number=5)
+
+# Linear Discriminant Analysis (LDA)
+model_lda <- train(classe~., data=TrainSet, method="lda", metric="Accuracy", trControl=control)
+
+predict_LDA <- predict(model_lda, newdata=TestSet)
+confMat_LDA <- confusionMatrix(predict_LDA, TestSet$classe)
+
+```
+
+```{r, echo=TRUE}
+# K-nearest neighbours
+model_knn <- train(classe~., data=TrainSet, method="knn", metric="Accuracy", trControl=control)
+
+predict_KNN <- predict(model_knn, newdata=TestSet)
+confMat_KNN <- confusionMatrix(predict_KNN, TestSet$classe)
+
+```
+
+
+```{r, echo=TRUE}
+# Random Forest
+model_RF <- train(classe~., data=TrainSet, method="rf", metric="Accuracy", trControl=control)
+
+predict_RF <- predict(model_RF, newdata=TestSet)
+confMat_RF <- confusionMatrix(predict_RF, TestSet$classe)
+
+```
+
+```{r, echo=TRUE}
+# Generalised Boosting Model
+control_1 <- trainControl(method="repeatedcv", number=5, repeats=1)
+model_GBM <- train(classe~., data=TrainSet, method="gbm", metric="Accuracy", trControl=control_1)
+
+predict_GBM <- predict(model_GBM, newdata=TestSet)
+confMat_GBM <- confusionMatrix(predict_GBM, TestSet$classe)
+```
+
+```{r, echo=TRUE}
+model_DecTree <- rpart(classe ~ ., data=TrainSet, method="class")
+predict_DecTree <- predict(model_DecTree, newdata=TestSet, type="class")
+confMat_DecTree <- confusionMatrix(predict_DecTree, TestSet$classe)
+```
+
+```{r, echo=TRUE}
+
+performance <- matrix(round(c(confMat_LDA$overall,confMat_KNN$overall,confMat_RF$overall, confMat_GBM$overall, confMat_DecTree$overall),3), ncol=5)
+colnames(performance)<-c('Linear Discrimination Analysis (LDA)', 'K- Nearest Neighbors (KNN)','Random Forest (RF)', 'Gradient Boosting (GBM)', 'Decision Tree (DT)')
+performance.table <- as.table(performance)
+print(performance.table)
+```
+
+Prediction and confusion matrix generated using each shows that Random Forest model with a high accuracy of 0.994 is the best model to use. 
+
+
+## Application of chosen model for prediction
+```{r, echo=TRUE}
+
+predictions <- predict(model_RF, TestData)
+table(predictions,TestData$problem_id)
+
+```
+
+## Conclusions
+Different models were tested for prediction acitivity and the Random Forest model with the highest accuracy of 0.994 was chosen to be the best.
